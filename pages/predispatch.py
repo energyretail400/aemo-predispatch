@@ -268,25 +268,25 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
 
     today_html    = "".join(_row_html(*r) for r in rows_today)
     tomorrow_html = "".join(_row_html(c, l, h, a) for c, l, h, a in rows_tomorrow)
-    actual_html   = (
-        f'<div style="font-size:11px;color:#64748b;margin-bottom:8px">'
-        f'Actual <b style="color:#0f172a">${actual_rrp:,.0f}</b>'
-        f'<span style="color:#94a3b8;margin-left:4px">{act_dt}</span></div>'
+    actual_price_html = (
+        f'<span style="font-size:16px;font-weight:800;color:{state_colour}">'
+        f'${actual_rrp:,.0f}</span>'
     ) if actual_rrp is not None else ""
 
-    header_bg       = _hex_to_rgba(state_colour, 0.12)
-    border          = _hex_to_rgba(state_colour, 0.4)
-    today_content   = today_html or '<div style="font-size:11px;color:#94a3b8;padding:4px 0">No remaining periods</div>'
+    header_bg     = _hex_to_rgba(state_colour, 0.12)
+    border        = _hex_to_rgba(state_colour, 0.4)
+    today_content = today_html or '<div style="font-size:11px;color:#94a3b8;padding:4px 0">No remaining periods</div>'
 
     with col:
         st.markdown(
             f'<div style="border:1px solid {border};border-top:4px solid {state_colour};'
             f'border-radius:8px;overflow:hidden">'
-            f'<div style="background:{header_bg};padding:10px 14px">'
+            f'<div style="background:{header_bg};padding:10px 14px;display:flex;'
+            f'align-items:center;justify-content:space-between">'
             f'<span style="font-size:16px;font-weight:800;color:{state_colour}">{state}</span>'
+            f'{actual_price_html}'
             f'</div>'
             f'<div style="padding:8px 14px 4px">'
-            f'{actual_html}'
             f'<div style="font-size:10px;font-weight:700;color:#94a3b8;'
             f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Today</div>'
             f'{today_content}'

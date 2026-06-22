@@ -274,8 +274,9 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
         f'<span style="color:#94a3b8;margin-left:4px">{act_dt}</span></div>'
     ) if actual_rrp is not None else ""
 
-    header_bg = _hex_to_rgba(state_colour, 0.12)
-    border    = _hex_to_rgba(state_colour, 0.4)
+    header_bg       = _hex_to_rgba(state_colour, 0.12)
+    border          = _hex_to_rgba(state_colour, 0.4)
+    today_content   = today_html or '<div style="font-size:11px;color:#94a3b8;padding:4px 0">No remaining periods</div>'
 
     with col:
         st.markdown(
@@ -288,7 +289,7 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
             f'{actual_html}'
             f'<div style="font-size:10px;font-weight:700;color:#94a3b8;'
             f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Today</div>'
-            f'{today_html if today_html else "<div style=\\"font-size:11px;color:#94a3b8;padding:4px 0\\">No remaining periods</div>"}'
+            f'{today_content}'
             f'<div style="font-size:10px;font-weight:700;color:#94a3b8;'
             f'text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 4px">Tomorrow</div>'
             f'{tomorrow_html}'

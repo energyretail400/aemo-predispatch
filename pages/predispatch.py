@@ -22,11 +22,11 @@ REGION_COLOURS = {
 }
 
 PRICE_PERIODS = [
-    ("ON", "Overnight",    "12am–6am",  "Wind-weighted, lower-demand period",      0,  6),
-    ("MP", "Morning Peak", "6am–10am",  "Demand ramp and system tightening",        6, 10),
-    ("MD", "Midday",       "10am–4pm",  "Solar oversupply and negative price risk", 10, 16),
-    ("EP", "Evening Peak", "4pm–8pm",   "Highest demand and price risk",            16, 20),
-    ("LE", "Late Evening", "8pm–12am",  "Post-peak residual volatility",            20, 24),
+    ("ON", "Overnight",    "12am–6am",   0,  6),
+    ("MP", "Morning Peak", "6am–10am",   6, 10),
+    ("MD", "Midday",       "10am–4pm",  10, 16),
+    ("EP", "Evening Peak", "4pm–8pm",   16, 20),
+    ("LE", "Late Evening", "8pm–12am",  20, 24),
 ]
 
 PERIOD_COLOURS = {
@@ -44,6 +44,7 @@ def _hex_to_rgba(hex_colour: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+# ── Auto-refresh ──────────────────────────────────────────────────────────────
 refresh_count = st_autorefresh(interval=300_000, key="predispatch_autorefresh")
 _last = st.session_state.get("_pd_last_refresh", -1)
 _is_autorefresh = refresh_count != _last
@@ -197,14 +198,13 @@ if not df_dis_today.empty:
         if lbl and pd.notna(rrp):
             actual_prices[lbl] = (float(rrp), latest_dt.strftime("%d %b %H:%M"))
 
-run_dt = df_pd_all["PREDISPATCHSEQNO"].dropna().max() if not df_pd_all.empty else None
+run_dt    = df_pd_all["PREDISPATCHSEQNO"].dropna().max() if not df_pd_all.empty else None
 run_label = run_dt.strftime("%d %b %Y %H:%M") if run_dt and pd.notna(run_dt) else "—"
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.title("AEMO Predispatch price signal")
 st.caption(f"Pre-Dispatch run: **{run_label}** | Auto-refreshes every 5 minutes")
-
 st.divider()
 
 
@@ -215,11 +215,12 @@ _today_date    = _now.date()
 _tomorrow_date = (_now + pd.Timedelta(days=1)).date()
 
 
-def _period_avg_for_date(df_region: pd.DataFrame, target_date, start_h: int, end_h: int):
-    if end_h == 24:
-        hmask = df_region["PERIODID"].dt.hour >= start_h
-    else:
-        hmask = (df_region["PERIODID"].dt.hour >= start_h) & (df_region["PERIODID"].dt.hour < end_h)
+def _period_avg(df_region: pd.DataFrame, target_date, sh: int, eh: int):
+    hmask = (
+        df_region["PERIODID"].dt.hour >= sh
+        if eh == 24
+        else (df_region["PERIODID"].dt.hour >= sh) & (df_region["PERIODID"].dt.hour < eh)
+    )
     date_mask = df_region["PERIODID"].dt.date == target_date
     if target_date == _today_date:
         sub = df_region.loc[date_mask & hmask & (df_region["PERIODID"] >= _now)].dropna(subset=["RRP"])
@@ -228,155 +229,164 @@ def _period_avg_for_date(df_region: pd.DataFrame, target_date, start_h: int, end
     return sub["RRP"].mean() if not sub.empty else None
 
 
-def _render_card(col, code, label, hours, avg, day_str, is_active=False):
-    val = f"${avg:,.2f}" if avg is not None else "—"
-    clr = PERIOD_COLOURS[code]
-    bg  = _hex_to_rgba(clr, 0.10)
-    bdr = _hex_to_rgba(clr, 0.35)
-    badge = (
-        f'<span style="background:{clr};color:#fff;font-size:9px;'
-        f'padding:1px 6px;border-radius:3px;margin-left:5px;vertical-align:middle">NOW</span>'
-    ) if is_active else ""
+# ── State summary cards (one per state, all periods as rows) ──────────────────
+def _render_state_card(col, state: str, df_pd: pd.DataFrame):
+    state_colour        = REGION_COLOURS[state]
+    actual_rrp, act_dt = actual_prices.get(state, (None, ""))
+
+    rows_today    = []
+    rows_tomorrow = []
+    for code, label, hours, sh, eh in PRICE_PERIODS:
+        end_ts = pd.Timestamp(_today_date) + pd.Timedelta(hours=eh)
+        if end_ts > _now:
+            avg       = _period_avg(df_pd, _today_date, sh, eh)
+            is_active = (
+                pd.Timestamp(_today_date) + pd.Timedelta(hours=sh)
+                <= _now <
+                pd.Timestamp(_today_date) + pd.Timedelta(hours=eh)
+            )
+            rows_today.append((code, label, hours, avg, is_active))
+        rows_tomorrow.append((code, label, hours, _period_avg(df_pd, _tomorrow_date, sh, eh)))
+
+    def _row_html(code, label, hours, avg, is_active=False):
+        clr  = PERIOD_COLOURS[code]
+        val  = f"${avg:,.0f}" if avg is not None else "—"
+        now_ = (
+            f'<span style="background:{clr};color:#fff;font-size:8px;'
+            f'padding:1px 5px;border-radius:3px;margin-left:4px">NOW</span>'
+        ) if is_active else ""
+        return (
+            f'<div style="display:flex;align-items:center;padding:5px 0;'
+            f'border-bottom:1px solid #f1f5f9">'
+            f'<span style="width:6px;height:6px;border-radius:50%;background:{clr};'
+            f'flex-shrink:0;margin-right:8px"></span>'
+            f'<span style="font-size:11px;color:#475569;flex:1">'
+            f'<b>{code}</b> {label}{now_}</span>'
+            f'<span style="font-size:13px;font-weight:700;color:#0f172a">{val}</span>'
+            f'</div>'
+        )
+
+    today_html    = "".join(_row_html(*r) for r in rows_today)
+    tomorrow_html = "".join(_row_html(c, l, h, a) for c, l, h, a in rows_tomorrow)
+    actual_html   = (
+        f'<div style="font-size:11px;color:#64748b;margin-bottom:8px">'
+        f'Actual <b style="color:#0f172a">${actual_rrp:,.0f}</b>'
+        f'<span style="color:#94a3b8;margin-left:4px">{act_dt}</span></div>'
+    ) if actual_rrp is not None else ""
+
+    header_bg = _hex_to_rgba(state_colour, 0.12)
+    border    = _hex_to_rgba(state_colour, 0.4)
+
     with col:
         st.markdown(
-            f'<div style="background:{bg};border:1px solid {bdr};'
-            f'border-left:4px solid {clr};border-radius:8px;padding:14px 16px;text-align:center">'
-            f'<div style="font-size:12px;font-weight:700;color:{clr};text-transform:uppercase;letter-spacing:1px">'
-            f'{code} · {label}{badge}</div>'
-            f'<div style="font-size:11px;color:#64748b;margin-top:2px">{hours}</div>'
-            f'<div style="font-size:22px;font-weight:700;color:#0f172a;margin-top:6px">{val}</div>'
-            f'<div style="font-size:12px;color:#64748b;font-weight:600;margin-top:4px">{day_str}</div>'
-            f'<div style="font-size:11px;color:#94a3b8">avg $/MWh</div>'
-            f'</div>', unsafe_allow_html=True
+            f'<div style="border:1px solid {border};border-top:4px solid {state_colour};'
+            f'border-radius:8px;overflow:hidden">'
+            f'<div style="background:{header_bg};padding:10px 14px">'
+            f'<span style="font-size:16px;font-weight:800;color:{state_colour}">{state}</span>'
+            f'</div>'
+            f'<div style="padding:8px 14px 4px">'
+            f'{actual_html}'
+            f'<div style="font-size:10px;font-weight:700;color:#94a3b8;'
+            f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Today</div>'
+            f'{today_html if today_html else "<div style=\\"font-size:11px;color:#94a3b8;padding:4px 0\\">No remaining periods</div>"}'
+            f'<div style="font-size:10px;font-weight:700;color:#94a3b8;'
+            f'text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 4px">Tomorrow</div>'
+            f'{tomorrow_html}'
+            f'</div></div>',
+            unsafe_allow_html=True,
         )
 
 
-# ── State tabs ────────────────────────────────────────────────────────────────
-tabs = st.tabs(STATES)
+cols = st.columns(5)
+for col, state in zip(cols, STATES):
+    df_pd = df_pd_all[df_pd_all["REGION_LABEL"] == state].sort_values("PERIODID")
+    _render_state_card(col, state, df_pd)
+
+st.divider()
+
+
+# ── Charts — all states, stacked ──────────────────────────────────────────────
+st.subheader("Realised Spot price and AEMO Predispatch price signal")
+st.caption("Green = realised today (DispatchIS) | Solid = 30-min pre-dispatch | Dotted = P5MIN (5-min)")
+
 _shade_colours = {code: _hex_to_rgba(clr, 0.12) for code, clr in PERIOD_COLOURS.items()}
 
-for tab, state in zip(tabs, STATES):
-    with tab:
-        df_pd  = df_pd_all[df_pd_all["REGION_LABEL"] == state].sort_values("PERIODID")
-        df_p5  = (
-            df_p5_all[df_p5_all["REGION_LABEL"] == state].sort_values("INTERVAL_DATETIME")
-            if not df_p5_all.empty else pd.DataFrame()
-        )
-        df_act = (
-            df_dis_today[df_dis_today["REGION_LABEL"] == state].sort_values("SETTLEMENTDATE")
-            if not df_dis_today.empty else pd.DataFrame()
-        )
+for state in STATES:
+    df_pd  = df_pd_all[df_pd_all["REGION_LABEL"] == state].sort_values("PERIODID")
+    df_p5  = (
+        df_p5_all[df_p5_all["REGION_LABEL"] == state].sort_values("INTERVAL_DATETIME")
+        if not df_p5_all.empty else pd.DataFrame()
+    )
+    df_act = (
+        df_dis_today[df_dis_today["REGION_LABEL"] == state].sort_values("SETTLEMENTDATE")
+        if not df_dis_today.empty else pd.DataFrame()
+    )
+    colour = REGION_COLOURS[state]
 
-        colour = REGION_COLOURS[state]
-        actual_rrp, actual_dt = actual_prices.get(state, (None, ""))
+    st.markdown(f"**{state}**")
+    fig = go.Figure()
 
-        _act_col, _ = st.columns([1, 4])
-        with _act_col:
-            val = f"${actual_rrp:,.2f}" if actual_rrp is not None else "—"
-            st.markdown(
-                f'<div style="background:#0f172a;color:#fff;border-radius:8px;padding:14px 16px;text-align:center">'
-                f'<div style="font-size:11px;opacity:0.7;text-transform:uppercase;letter-spacing:1px">Actual</div>'
-                f'<div style="font-size:11px;opacity:0.5;margin-top:2px">{actual_dt}</div>'
-                f'<div style="font-size:26px;font-weight:700;margin-top:6px">{val}</div>'
-                f'<div style="font-size:11px;opacity:0.6">$/MWh</div>'
-                f'</div>', unsafe_allow_html=True
-            )
-
-        if df_pd.empty:
-            st.info(f"No predispatch data for {state}.")
-            continue
-
-        _today_cards = [
-            (code, label, hours, sh, eh,
-             _period_avg_for_date(df_pd, _today_date, sh, eh),
-             (pd.Timestamp(_today_date) + pd.Timedelta(hours=sh))
-             <= _now <
-             (pd.Timestamp(_today_date) + pd.Timedelta(hours=eh)))
-            for code, label, hours, desc, sh, eh in PRICE_PERIODS
-            if (pd.Timestamp(_today_date) + pd.Timedelta(hours=eh)) > _now
-        ]
-
-        if _today_cards:
-            st.caption("**Today**")
-            _cols = st.columns(len(_today_cards))
-            for _c, (code, label, hours, sh, eh, avg, is_active) in zip(_cols, _today_cards):
-                _render_card(_c, code, label, hours, avg, "Today", is_active)
-
-        st.caption("**Tomorrow**")
-        _tomorrow_cards = [
-            (code, label, hours, sh, eh, _period_avg_for_date(df_pd, _tomorrow_date, sh, eh))
-            for code, label, hours, desc, sh, eh in PRICE_PERIODS
-        ]
-        _cols = st.columns(5)
-        for _c, (code, label, hours, sh, eh, avg) in zip(_cols, _tomorrow_cards):
-            _render_card(_c, code, label, hours, avg, "Tomorrow")
-
-        st.markdown(f"**Realised Spot price and AEMO Predispatch price signal — {state}**")
-        st.caption("Green = realised today (DispatchIS) | Solid = 30-min pre-dispatch | Dotted = P5MIN (5-min)")
-
-        fig = go.Figure()
-
-        if not df_act.empty:
-            df_act_rrp = df_act.dropna(subset=["RRP"])
-            if not df_act_rrp.empty:
-                fig.add_trace(go.Scatter(
-                    x=df_act_rrp["SETTLEMENTDATE"], y=df_act_rrp["RRP"],
-                    name="Actual (today)",
-                    line=dict(color="#16a34a", width=2),
-                    hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>Actual</extra>",
-                ))
-
-        df_rrp = df_pd.dropna(subset=["RRP"])
-        if not df_rrp.empty:
+    if not df_act.empty:
+        df_act_rrp = df_act.dropna(subset=["RRP"])
+        if not df_act_rrp.empty:
             fig.add_trace(go.Scatter(
-                x=df_rrp["PERIODID"], y=df_rrp["RRP"],
-                name="Forecast 30min",
-                line=dict(color=colour, width=2.5),
-                hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>30min</extra>",
+                x=df_act_rrp["SETTLEMENTDATE"], y=df_act_rrp["RRP"],
+                name="Actual",
+                line=dict(color="#16a34a", width=2),
+                hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>Actual</extra>",
             ))
 
-        if not df_p5.empty:
-            df_p5_rrp = df_p5.dropna(subset=["RRP"])
-            if not df_p5_rrp.empty:
-                fig.add_trace(go.Scatter(
-                    x=df_p5_rrp["INTERVAL_DATETIME"], y=df_p5_rrp["RRP"],
-                    name="Forecast 5min",
-                    mode="lines",
-                    line=dict(color=colour, width=1.5, dash="dot"),
-                    hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>5min</extra>",
-                ))
+    df_rrp = df_pd.dropna(subset=["RRP"])
+    if not df_rrp.empty:
+        fig.add_trace(go.Scatter(
+            x=df_rrp["PERIODID"], y=df_rrp["RRP"],
+            name="30min forecast",
+            line=dict(color=colour, width=2.5),
+            hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>30min</extra>",
+        ))
 
-        if not df_pd.empty:
-            _min_x = df_pd["PERIODID"].min()
-            _max_x = df_pd["PERIODID"].max()
-            _day = _min_x.normalize()
-            while _day <= _max_x:
-                for code, _, _hours, _desc, sh, eh in PRICE_PERIODS:
-                    _s = _day + pd.Timedelta(hours=sh)
-                    _e = _day + pd.Timedelta(hours=eh)
-                    if _e <= _now or _s >= _max_x:
-                        continue
-                    fig.add_vrect(
-                        x0=_s, x1=_e,
-                        fillcolor=_shade_colours.get(code, "rgba(0,0,0,0.03)"),
-                        layer="below", line_width=0,
-                    )
-                _day += pd.Timedelta(days=1)
+    if not df_p5.empty:
+        df_p5_rrp = df_p5.dropna(subset=["RRP"])
+        if not df_p5_rrp.empty:
+            fig.add_trace(go.Scatter(
+                x=df_p5_rrp["INTERVAL_DATETIME"], y=df_p5_rrp["RRP"],
+                name="5min forecast",
+                mode="lines",
+                line=dict(color=colour, width=1.5, dash="dot"),
+                hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>5min</extra>",
+            ))
 
-        fig.update_layout(
-            yaxis_title="Spot Price ($/MWh)",
-            xaxis_title=None,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-            margin=dict(l=0, r=0, t=30, b=0),
-            height=460,
-            hovermode="x unified",
-            plot_bgcolor="#f8fafc",
-            paper_bgcolor="#ffffff",
-        )
-        fig.update_xaxes(showgrid=False)
-        fig.update_yaxes(gridcolor="#e2e8f0")
+    if not df_pd.empty:
+        _min_x = df_pd["PERIODID"].min()
+        _max_x = df_pd["PERIODID"].max()
+        _day   = _min_x.normalize()
+        while _day <= _max_x:
+            for code, _, _hours, sh, eh in PRICE_PERIODS:
+                _s = _day + pd.Timedelta(hours=sh)
+                _e = _day + pd.Timedelta(hours=eh)
+                if _e <= _now or _s >= _max_x:
+                    continue
+                fig.add_vrect(
+                    x0=_s, x1=_e,
+                    fillcolor=_shade_colours.get(code, "rgba(0,0,0,0.03)"),
+                    layer="below", line_width=0,
+                )
+            _day += pd.Timedelta(days=1)
 
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        yaxis_title="$/MWh",
+        xaxis_title=None,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=320,
+        hovermode="x unified",
+        plot_bgcolor="#f8fafc",
+        paper_bgcolor="#ffffff",
+    )
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(gridcolor="#e2e8f0")
+
+    st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 st.caption("Source: AEMO NEMWEB — Predispatch Reports + P5MIN + DispatchIS | Physical run (INTERVENTION=0)")

@@ -48,6 +48,42 @@ def _scrape(url: str, pattern: re.Pattern) -> list[dict]:
     return files
 
 
+# ── Medium Term PASA ─────────────────────────────────────────────────────────
+
+MTPASA_URL     = "https://www.nemweb.com.au/REPORTS/CURRENT/Medium_Term_PASA_Reports/"
+MTPASA_PATTERN = re.compile(r"PUBLIC_MTPASA_(\d{12})_\d+\.zip", re.IGNORECASE)
+
+
+def download_latest_mtpasa() -> tuple[Path | None, str]:
+    folder = INPUT_FOLDER / "MTPASA"
+    folder.mkdir(parents=True, exist_ok=True)
+    files = _scrape(MTPASA_URL, MTPASA_PATTERN)
+    if not files:
+        return None, "No MTPASA files found on NEMWEB."
+    newest = files[0]
+    dest   = folder / newest["name"]
+    if dest.exists() and zipfile.is_zipfile(dest):
+        return dest, f"MTPASA data is up to date ({newest['name']})"
+    try:
+        _download_zip(newest["url"], dest)
+    except Exception as e:
+        return None, f"MTPASA download failed: {e}"
+    return dest, f"Downloaded: {newest['name']}"
+
+
+def get_latest_mtpasa_local() -> Path | None:
+    folder = INPUT_FOLDER / "MTPASA"
+    folder.mkdir(parents=True, exist_ok=True)
+    valid = [p for p in folder.glob("PUBLIC_MTPASA_*.zip") if zipfile.is_zipfile(p)]
+    return max(valid, key=lambda p: MTPASA_PATTERN.search(p.name).group(1), default=None) if valid else None
+
+
+def count_mtpasa_local_files() -> int:
+    folder = INPUT_FOLDER / "MTPASA"
+    folder.mkdir(parents=True, exist_ok=True)
+    return sum(1 for p in folder.glob("PUBLIC_MTPASA_*.zip") if zipfile.is_zipfile(p))
+
+
 # ── Short Term PASA ───────────────────────────────────────────────────────────
 
 STPASA_URL = "https://www.nemweb.com.au/REPORTS/CURRENT/Short_Term_PASA_Reports/"

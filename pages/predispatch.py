@@ -250,7 +250,7 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
 
     def _row_html(code, label, hours, avg, is_active=False):
         clr  = PERIOD_COLOURS[code]
-        val  = f"${avg:,.0f}" if avg is not None else "—"
+        val  = f"${avg:,.2f}" if avg is not None else "—"
         now_ = (
             f'<span style="background:{clr};color:#fff;font-size:8px;'
             f'padding:1px 5px;border-radius:3px;margin-left:4px">NOW</span>'
@@ -270,7 +270,7 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
     tomorrow_html = "".join(_row_html(c, l, h, a) for c, l, h, a in rows_tomorrow)
     actual_price_html = (
         f'<span style="font-size:16px;font-weight:800;color:{state_colour}">'
-        f'${actual_rrp:,.0f}</span>'
+        f'${actual_rrp:,.2f}</span>'
     ) if actual_rrp is not None else ""
 
     header_bg     = _hex_to_rgba(state_colour, 0.12)

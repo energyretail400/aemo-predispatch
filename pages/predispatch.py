@@ -234,6 +234,13 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
     state_colour        = REGION_COLOURS[state]
     actual_rrp, act_dt = actual_prices.get(state, (None, ""))
 
+    # Daily average of all realized intervals today
+    if not df_dis_today.empty:
+        _dis_state = df_dis_today[df_dis_today["REGION_LABEL"] == state].dropna(subset=["RRP"])
+        daily_avg  = _dis_state["RRP"].mean() if not _dis_state.empty else None
+    else:
+        daily_avg = None
+
     rows_today    = []
     rows_tomorrow = []
     for code, label, hours, sh, eh in PRICE_PERIODS:
@@ -273,6 +280,11 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
         f'${actual_rrp:,.2f}</span>'
     ) if actual_rrp is not None else ""
 
+    daily_avg_html = (
+        f'<span style="font-size:13px;font-weight:600;color:{state_colour};opacity:0.7;margin-left:6px">'
+        f'(avg ${daily_avg:,.2f})</span>'
+    ) if daily_avg is not None else ""
+
     header_bg     = _hex_to_rgba(state_colour, 0.12)
     border        = _hex_to_rgba(state_colour, 0.4)
     today_content = today_html or '<div style="font-size:11px;color:#94a3b8;padding:4px 0">No remaining periods</div>'
@@ -283,7 +295,10 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
             f'border-radius:8px;overflow:hidden">'
             f'<div style="background:{header_bg};padding:10px 14px;display:flex;'
             f'align-items:center;justify-content:space-between">'
+            f'<span>'
             f'<span style="font-size:16px;font-weight:800;color:{state_colour}">{state}</span>'
+            f'{daily_avg_html}'
+            f'</span>'
             f'{actual_price_html}'
             f'</div>'
             f'<div style="padding:8px 14px 4px">'

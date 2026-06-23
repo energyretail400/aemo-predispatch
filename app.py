@@ -5,7 +5,7 @@ st.set_page_config(page_title="AEMO Dashboard", page_icon="⚡", layout="wide")
 st.markdown(
     """<style>
     div[data-testid="stAppViewContainer"] > section:first-child { padding-top: 1rem; }
-    div[class*="block-container"] {
+    section[data-testid="stMain"] > div:first-child {
         max-width: 100% !important;
         width: 100% !important;
         padding-left: 2rem !important;

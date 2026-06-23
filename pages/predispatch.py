@@ -3,6 +3,19 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+st.markdown(
+    """<style>
+    section[data-testid="stMain"] > div:first-child {
+        max-width: 100% !important;
+        width: 100% !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        box-sizing: border-box !important;
+    }
+    </style>""",
+    unsafe_allow_html=True,
+)
+
 from downloader import (
     download_latest_predispatch, get_latest_predispatch_local,
     download_latest_dispatchis, get_latest_dispatchis_local,

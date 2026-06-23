@@ -5,12 +5,12 @@ st.set_page_config(page_title="AEMO Dashboard", page_icon="⚡", layout="wide")
 st.markdown(
     """<style>
     div[data-testid="stAppViewContainer"] > section:first-child { padding-top: 1rem; }
-    .stMainBlockContainer,
-    div[data-testid="stAppViewBlockContainer"],
-    .block-container {
+    div[class*="block-container"] {
         max-width: 100% !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
+        width: 100% !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        box-sizing: border-box !important;
     }
     </style>""",
     unsafe_allow_html=True,

@@ -204,6 +204,21 @@ def get_latest_dispatchis_local() -> Path | None:
     return max(valid, key=lambda p: DISPATCHIS_PATTERN.search(p.name).group(1), default=None) if valid else None
 
 
+def get_all_dispatchis_yesterday_local() -> list[Path]:
+    """Return all valid local DispatchIS ZIPs for yesterday (AEST), sorted oldest first."""
+    from datetime import datetime, timezone, timedelta
+    aest = timezone(timedelta(hours=10))
+    aest_yesterday = (datetime.now(tz=aest) - timedelta(days=1)).strftime("%Y%m%d")
+    folder = INPUT_FOLDER / "DISPATCHIS"
+    folder.mkdir(parents=True, exist_ok=True)
+    files = [
+        p for p in folder.glob("PUBLIC_DISPATCHIS_*.zip")
+        if (m := DISPATCHIS_PATTERN.search(p.name)) and m.group(1).startswith(aest_yesterday)
+        and zipfile.is_zipfile(p)
+    ]
+    return sorted(files, key=lambda p: DISPATCHIS_PATTERN.search(p.name).group(1))
+
+
 def get_all_dispatchis_today_local() -> list[Path]:
     """Return all valid local DispatchIS ZIPs for today (AEST), sorted oldest first."""
     from datetime import datetime, timezone, timedelta

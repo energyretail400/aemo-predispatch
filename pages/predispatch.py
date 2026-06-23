@@ -6,7 +6,8 @@ from streamlit_autorefresh import st_autorefresh
 from downloader import (
     download_latest_predispatch, get_latest_predispatch_local,
     download_latest_dispatchis, get_latest_dispatchis_local,
-    get_all_dispatchis_today_local, download_all_dispatchis_today,
+    get_all_dispatchis_today_local, get_all_dispatchis_yesterday_local,
+    download_all_dispatchis_today,
     download_latest_p5min, get_latest_p5min_local,
 )
 from parser import load_predispatch_region, load_dispatch_price, load_p5min_regionsolution
@@ -189,6 +190,26 @@ try:
 except Exception:
     df_dis_today = pd.DataFrame()
 
+_yday_dis_paths = tuple(str(p) for p in get_all_dispatchis_yesterday_local())
+try:
+    df_dis_yday = _load_dis_today(_yday_dis_paths) if _yday_dis_paths else pd.DataFrame()
+except Exception:
+    df_dis_yday = pd.DataFrame()
+
+# Pre-compute per-state daily averages (today and yesterday)
+def _state_avg(df: pd.DataFrame) -> dict[str, float]:
+    if df.empty:
+        return {}
+    return (
+        df.dropna(subset=["RRP"])
+        .groupby("REGION_LABEL")["RRP"]
+        .mean()
+        .to_dict()
+    )
+
+_today_avgs = _state_avg(df_dis_today)
+_yday_avgs  = _state_avg(df_dis_yday)
+
 actual_prices: dict[str, tuple[float, str]] = {}
 if not df_dis_today.empty:
     latest_dt = df_dis_today["SETTLEMENTDATE"].max()
@@ -234,12 +255,8 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
     state_colour        = REGION_COLOURS[state]
     actual_rrp, act_dt = actual_prices.get(state, (None, ""))
 
-    # Daily average of all realized intervals today
-    if not df_dis_today.empty:
-        _dis_state = df_dis_today[df_dis_today["REGION_LABEL"] == state].dropna(subset=["RRP"])
-        daily_avg  = _dis_state["RRP"].mean() if not _dis_state.empty else None
-    else:
-        daily_avg = None
+    daily_avg = _today_avgs.get(state)
+    yday_avg  = _yday_avgs.get(state)
 
     rows_today    = []
     rows_tomorrow = []
@@ -280,10 +297,17 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
         f'${actual_rrp:,.2f}</span>'
     ) if actual_rrp is not None else ""
 
+    if daily_avg is not None and yday_avg is not None:
+        avg_text = f"today ${daily_avg:,.2f} | yday ${yday_avg:,.2f}"
+    elif daily_avg is not None:
+        avg_text = f"avg ${daily_avg:,.2f}"
+    else:
+        avg_text = None
+
     daily_avg_html = (
         f'<span style="font-size:13px;font-weight:600;color:{state_colour};opacity:0.7;margin-left:6px">'
-        f'(avg ${daily_avg:,.2f})</span>'
-    ) if daily_avg is not None else ""
+        f'({avg_text})</span>'
+    ) if avg_text is not None else ""
 
     header_bg     = _hex_to_rgba(state_colour, 0.12)
     border        = _hex_to_rgba(state_colour, 0.4)

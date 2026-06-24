@@ -311,9 +311,9 @@ def _render_state_card(col, state: str, df_pd: pd.DataFrame):
     ) if actual_rrp is not None else ""
 
     if daily_avg is not None and yday_avg is not None:
-        avg_text = f"today ${daily_avg:,.2f} | yday ${yday_avg:,.2f}"
+        avg_text = f"D-1 avg ${yday_avg:,.2f} | D avg ${daily_avg:,.2f}"
     elif daily_avg is not None:
-        avg_text = f"avg ${daily_avg:,.2f}"
+        avg_text = f"D avg ${daily_avg:,.2f}"
     else:
         avg_text = None
 
